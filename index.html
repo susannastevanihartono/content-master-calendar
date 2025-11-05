@@ -219,9 +219,8 @@
 
     <!-- 
     ================================================================
-    PERUBAHAN UTAMA: FIREBASE SDK
+    FIREBASE SDK & LOGIC
     ================================================================
-    Kode di bawah ini mengimpor library Firebase yang diperlukan.
     -->
     <script type="module">
         // Impor fungsi-fungsi yang kita butuhkan dari Firebase SDK
@@ -248,7 +247,8 @@
 
         // 
         // PERUBAHAN: Menggunakan variabel global yang disediakan platform
-        // 
+        // Ini adalah tempat config Anda akan dimuat secara otomatis
+        //
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
@@ -258,6 +258,7 @@
             // PERUBAHAN: Menambahkan setLogLevel untuk debug error
             setLogLevel('Debug');
 
+            // Cek jika config tidak ter-load
             if (!firebaseConfig.apiKey) {
                 console.error("Firebase config is missing!");
                 document.body.innerHTML = `<div style="padding: 2rem; text-align: center; background-color: #FFFBEB; color: #B45309;">
@@ -301,7 +302,7 @@
                 const body = document.querySelector('body');
                 body.innerHTML = `<div style="padding: 2rem; text-align: center; background-color: #FFFBEB; color: #B45309;">
                     <h1>Connection Error</h1>
-                    <p>Tidak bisa terhubung ke database. Apakah Anda sudah memasukkan <b>firebaseConfig</b> di file index.html?</p>
+                    <p>Tidak bisa terhubung ke database. Pastikan konfigurasi Anda benar.</p>
                     <p><i>Error: ${error.message}</i></p>
                 </div>`;
             }
@@ -375,9 +376,6 @@
             populateSelect('status', options.statuses);
             populateSelect('platform-filter', options.platforms);
             populateSelect('status-filter', options.statuses.map(s => s.split(' ')[1]));
-
-            // FUNGSI saveState() DIHAPUS, karena kita simpan langsung ke Firebase
-            // const saveState = () => { ... } // <-- Dihapus
 
             const digitalClockEl = document.getElementById('digital-clock');
             const dateTodayEl = document.getElementById('date-today');
@@ -496,7 +494,12 @@
                     filteredData = filteredData.filter(item => item.status && item.status.includes(statusFilter));
                 }
                 
-                filteredData.sort((a, b) => new Date(b.tanggalUpload) - new Date(a.tanggalUpload));
+                // Mengurutkan data di sisi klien (client-side)
+                filteredData.sort((a, b) => {
+                    const dateA = a.tanggalUpload ? new Date(a.tanggalUpload) : new Date(0);
+                    const dateB = b.tanggalUpload ? new Date(b.tanggalUpload) : new Date(0);
+                    return dateB - dateA; // Dari terbaru ke terlama
+                });
                 
                 if (filteredData.length === 0) {
                      tableBodyEl.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-stone-500">Belum ada konten.</td></tr>`;
@@ -506,13 +509,28 @@
                 filteredData.forEach(item => {
                     const row = document.createElement('tr');
                     row.className = 'hover:bg-stone-50 cursor-pointer';
+                    
+                    // Format tanggal
+                    let formattedDate = 'N/A';
+                    if (item.tanggalUpload) {
+                        try {
+                            formattedDate = new Date(item.tanggalUpload).toLocaleDateString('id-ID', {
+                                day: '2-digit', 
+                                month: 'short', 
+                                year: 'numeric'
+                            });
+                        } catch (e) {
+                            console.warn("Invalid date format:", item.tanggalUpload);
+                        }
+                    }
+
                     row.innerHTML = `
                         <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm font-medium text-stone-900">${item.title}</div>
-                            <div class="text-sm text-stone-500">${item.akun}</div>
+                            <div class="text-sm font-medium text-stone-900">${item.title || 'Tanpa Judul'}</div>
+                            <div class="text-sm text-stone-500">${item.akun || 'N/A'}</div>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${item.platform}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${new Date(item.tanggalUpload).toLocaleDateString('id-ID')}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${item.platform || 'N/A'}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${formattedDate}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(item.status)}">${item.status ? item.status.split(' ')[1] : 'N/A'}</span>
                         </td>
@@ -545,11 +563,11 @@
 
                 if (contentItem) {
                     document.getElementById('content-id').value = contentItem.id;
-                    document.getElementById('title').value = contentItem.title;
-                    document.getElementById('platform').value = contentItem.platform;
-                    document.getElementById('akun').value = contentItem.akun;
-                    document.getElementById('status').value = contentItem.status;
-                    document.getElementById('tanggal-upload').value = contentItem.tanggalUpload;
+                    document.getElementById('title').value = contentItem.title || '';
+                    document.getElementById('platform').value = contentItem.platform || '';
+                    document.getElementById('akun').value = contentItem.akun || '';
+                    document.getElementById('status').value = contentItem.status || '';
+                    document.getElementById('tanggal-upload').value = contentItem.tanggalUpload || '';
                     document.getElementById('file-konten').value = contentItem.fileKonten || '';
                     document.getElementById('caption').value = contentItem.caption || '';
                     document.getElementById('insight').value = contentItem.insight || '';
@@ -558,7 +576,10 @@
                 } else {
                      if (defaultDate) {
                          const now = new Date();
-                         const defaultDateTime = `${defaultDate}T${now.toTimeString().slice(0,5)}`;
+                         // Format TKK:MM
+                         const hours = String(now.getHours()).padStart(2, '0');
+                         const minutes = String(now.getMinutes()).padStart(2, '0');
+                         const defaultDateTime = `${defaultDate}T${hours}:${minutes}`;
                          document.getElementById('tanggal-upload').value = defaultDateTime;
                      }
                 }
@@ -602,7 +623,8 @@
                 try {
                     if (state.editingContentId) {
                         // JIKA EDIT: Update dokumen yang ada
-                        const docRef = doc(db, "contentMaster", state.editingContentId);
+                        // Perhatikan: path harus sesuai dengan path koleksi
+                        const docRef = doc(db, `/artifacts/${appId}/public/data/contentMaster`, state.editingContentId);
                         await setDoc(docRef, formData, { merge: true }); // merge: true agar aman
                     } else {
                         // JIKA BARU: Tambah dokumen baru
@@ -616,7 +638,7 @@
 
                 } catch (error) {
                     console.error("Error saving document: ", error);
-                    alert("Gagal menyimpan data ke database. Coba lagi.");
+                    // Hindari alert(), gunakan console.log atau UI non-blocking
                 }
             });
             
@@ -625,23 +647,22 @@
             // Juga diubah menjadi async dan menghapus `confirm()`
             // ================================================================
             document.getElementById('delete-btn').addEventListener('click', async () => {
-                // `confirm()` tidak berfungsi baik di embed Notion.
-                // Untuk keamanan, Anda bisa membuat modal konfirmasi kustom.
-                // Untuk saat ini, kita hapus konfirmasinya agar bisa berfungsi.
-                // if (confirm('Apakah Anda yakin ingin menghapus konten ini?')) { // <-- Dihapus
+                // `confirm()` tidak berfungsi baik di beberapa environment.
+                // Idealnya, buat modal konfirmasi kustom.
                     
                 if (!state.editingContentId) return; // Pastikan ada ID untuk dihapus
 
                 try {
-                    const docRef = doc(db, "contentMaster", state.editingContentId);
+                    // Pastikan path-nya benar
+                    const docRef = doc(db, `/artifacts/${appId}/public/data/contentMaster`, state.editingContentId);
                     await deleteDoc(docRef);
                     closeModal();
                     // Lagi, onSnapshot akan menangani update UI.
-                } catch (error) {
+                } catch (error)
+                 {
                     console.error("Error deleting document: ", error);
-                    alert("Gagal menghapus data. Coba lagi.");
+                    // Hindari alert()
                 }
-                // }
             });
 
             const tabButtons = document.querySelectorAll('.tab-button');
